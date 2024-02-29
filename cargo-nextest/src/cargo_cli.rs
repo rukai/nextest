@@ -119,7 +119,7 @@ pub(crate) struct CargoOptions {
         group = "cargo-opts",
         help_heading = "Compilation options"
     )]
-    cargo_profile: Option<String>,
+    pub(crate) cargo_profile: Option<String>,
 
     /// Build for the target triple
     #[arg(

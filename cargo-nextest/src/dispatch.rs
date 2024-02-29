@@ -1250,6 +1250,12 @@ impl BaseApp {
         let binary_list = self.build_binary_list()?;
         let path_mapper = PathMapper::noop();
 
+        let build_platforms = binary_list.rust_build_meta.build_platforms()?;
+        let (_, config) = self.load_config()?;
+        let profile = self
+            .load_profile(self.cargo_opts.cargo_profile.as_deref(), &config)?
+            .apply_build_platforms(&build_platforms);
+
         let mut reporter = ArchiveReporter::new(self.output.verbose);
         if self
             .output
@@ -1269,6 +1275,7 @@ impl BaseApp {
             format,
             zstd_level,
             output_file,
+            profile,
             |event| {
                 reporter.report_event(event, &mut writer)?;
                 writer.flush()
@@ -1312,6 +1319,31 @@ impl BaseApp {
     #[inline]
     fn graph(&self) -> &PackageGraph {
         &self.package_graph
+    }
+
+    fn load_profile<'cfg>(
+        &self,
+        profile_name: Option<&str>,
+        config: &'cfg NextestConfig,
+    ) -> Result<NextestProfile<'cfg, PreBuildPlatform>> {
+        let profile_name = profile_name.unwrap_or_else(|| {
+            // The "official" way to detect a miri environment is with MIRI_SYSROOT.
+            // https://github.com/rust-lang/miri/pull/2398#issuecomment-1190747685
+            if std::env::var_os("MIRI_SYSROOT").is_some() {
+                NextestConfig::DEFAULT_MIRI_PROFILE
+            } else {
+                NextestConfig::DEFAULT_PROFILE
+            }
+        });
+        let profile = config
+            .profile(profile_name)
+            .map_err(ExpectedError::profile_not_found)?;
+        let store_dir = profile.store_dir();
+        std::fs::create_dir_all(store_dir).map_err(|err| ExpectedError::StoreDirCreateError {
+            store_dir: store_dir.to_owned(),
+            err,
+        })?;
+        Ok(profile)
     }
 }
 
@@ -1385,31 +1417,6 @@ impl App {
         )
     }
 
-    fn load_profile<'cfg>(
-        &self,
-        profile_name: Option<&str>,
-        config: &'cfg NextestConfig,
-    ) -> Result<NextestProfile<'cfg, PreBuildPlatform>> {
-        let profile_name = profile_name.unwrap_or_else(|| {
-            // The "official" way to detect a miri environment is with MIRI_SYSROOT.
-            // https://github.com/rust-lang/miri/pull/2398#issuecomment-1190747685
-            if std::env::var_os("MIRI_SYSROOT").is_some() {
-                NextestConfig::DEFAULT_MIRI_PROFILE
-            } else {
-                NextestConfig::DEFAULT_PROFILE
-            }
-        });
-        let profile = config
-            .profile(profile_name)
-            .map_err(ExpectedError::profile_not_found)?;
-        let store_dir = profile.store_dir();
-        std::fs::create_dir_all(store_dir).map_err(|err| ExpectedError::StoreDirCreateError {
-            store_dir: store_dir.to_owned(),
-            err,
-        })?;
-        Ok(profile)
-    }
-
     fn exec_list(
         &self,
         message_format: MessageFormatOpts,
@@ -1473,7 +1480,7 @@ impl App {
         output_writer: &mut OutputWriter,
     ) -> Result<()> {
         let (_, config) = self.base.load_config()?;
-        let profile = self.load_profile(profile_name, &config)?;
+        let profile = self.base.load_profile(profile_name, &config)?;
 
         // Validate test groups before doing any other work.
         let mode = if groups.is_empty() {
@@ -1530,7 +1537,7 @@ impl App {
         output_writer: &mut OutputWriter,
     ) -> Result<()> {
         let (version_only_config, config) = self.base.load_config()?;
-        let profile = self.load_profile(profile_name, &config)?;
+        let profile = self.base.load_profile(profile_name, &config)?;
 
         // Construct this here so that errors are reported before the build step.
         let mut structured_reporter = structured::StructuredReporter::new();

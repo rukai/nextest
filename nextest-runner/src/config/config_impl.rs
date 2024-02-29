@@ -702,6 +702,13 @@ impl<'cfg> NextestProfile<'cfg, FinalConfig> {
             .unwrap_or(self.default_profile.fail_fast)
     }
 
+    /// Returns the fail-fast config for this profile.
+    pub fn archive_include(&self) -> &Vec<String> {
+        self.custom_profile
+            .map(|profile| &profile.archive_include)
+            .unwrap_or(&self.default_profile.archive_include)
+    }
+
     /// Returns the list of setup scripts.
     pub fn setup_scripts(&self, test_list: &TestList<'_>) -> SetupScripts<'_> {
         SetupScripts::new(self, test_list)
@@ -885,6 +892,7 @@ pub(super) struct DefaultProfileImpl {
     overrides: Vec<DeserializedOverride>,
     scripts: Vec<DeserializedProfileScriptConfig>,
     junit: DefaultJunitImpl,
+    archive_include: Vec<String>,
 }
 
 impl DefaultProfileImpl {
@@ -933,6 +941,7 @@ impl DefaultProfileImpl {
                     .store_failure_output
                     .expect("junit.store-failure-output present in default profile"),
             },
+            archive_include: p.archive_include,
         }
     }
 
@@ -982,6 +991,8 @@ pub(super) struct CustomProfileImpl {
     scripts: Vec<DeserializedProfileScriptConfig>,
     #[serde(default)]
     junit: JunitImpl,
+    #[serde(default)]
+    archive_include: Vec<String>,
 }
 
 #[allow(dead_code)]
